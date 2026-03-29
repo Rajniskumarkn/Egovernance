@@ -39,16 +39,16 @@ This platform bridges the gap between citizens and administrators, ensuring trus
 
 ```mermaid
 graph TD
-    User([User / Citizen]) -->|Interacts with| React[React.js Frontend]
-    Admin([Administrator]) -->|Interacts with| React
+    User(["User / Citizen"]) -->|"Interacts with"| React["React.js Frontend"]
+    Admin(["Administrator"]) -->|"Interacts with"| React
     
-    React -->|API Calls (JWT Auth)| Node(Node.js / Express Backend)
-    React -->|Web3 RPC| Blockchain[(Ethereum / Hardhat)]
+    React -->|"API Calls (JWT Auth)"| Node("Node.js / Express Backend")
+    React -->|"Web3 RPC"| Blockchain[("Ethereum / Hardhat")]
     
-    Node -->|Read/Write User Data| MongoDB[(MongoDB)]
+    Node -->|"Read/Write User Data"| MongoDB[("MongoDB")]
     
-    React -->|Document Uploads| PyAI(Python FastAPI AI Engine)
-    PyAI -->|Smart Contract Calls| Blockchain
+    React -->|"Document Uploads"| PyAI("Python FastAPI AI Engine")
+    PyAI -->|"Smart Contract Calls"| Blockchain
 ```
 
 * **Frontend:** React.js, Vite, Ethers.js
