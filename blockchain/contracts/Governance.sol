@@ -27,7 +27,7 @@ contract Governance {
         string location;
         uint256 area; // in sq ft
         address owner;
-        bool isRegistered;
+        RequestStatus status;
     }
 
     struct FundRequest {
@@ -71,7 +71,7 @@ contract Governance {
     }
 
     function registerUser(string memory _name, Role _role, string memory _emailHash) public {
-        require(!users[msg.sender].isRegistered, "User already registered");
+        // Allow updating for development purposes
         users[msg.sender] = User(_name, _role, true, _emailHash);
         emit UserRegistered(msg.sender, _name, _role);
     }
@@ -99,8 +99,20 @@ contract Governance {
 
     function registerLand(string memory _location, uint256 _area) public onlyRegistered {
         landCount++;
-        lands[landCount] = Land(landCount, _location, _area, msg.sender, true);
+        lands[landCount] = Land(landCount, _location, _area, msg.sender, RequestStatus.Pending);
         emit LandRegistered(landCount, _location, msg.sender);
+    }
+
+    function approveLand(uint256 _landId) public onlyAdmin {
+        require(_landId > 0 && _landId <= landCount, "Invalid land ID");
+        require(lands[_landId].status == RequestStatus.Pending, "Land is not pending");
+        lands[_landId].status = RequestStatus.Approved;
+    }
+
+    function rejectLand(uint256 _landId) public onlyAdmin {
+        require(_landId > 0 && _landId <= landCount, "Invalid land ID");
+        require(lands[_landId].status == RequestStatus.Pending, "Land is not pending");
+        lands[_landId].status = RequestStatus.Rejected;
     }
 
     function requestFunds(string memory _purpose, uint256 _amount) public onlyRegistered {

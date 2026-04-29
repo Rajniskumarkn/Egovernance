@@ -4,6 +4,7 @@ import '../App.css';
 
 const Login = ({ onLogin }) => {
     const [isRegister, setIsRegister] = useState(false);
+    const [isAdminLogin, setIsAdminLogin] = useState(false);
     const [email, setEmail] = useState("");
     const [fullName, setFullName] = useState(""); // [NEW]
     const [password, setPassword] = useState("");
@@ -24,6 +25,16 @@ const Login = ({ onLogin }) => {
                 alert("Registration Successful! Please Login.");
                 setIsRegister(false);
             } else {
+                if (isAdminLogin && res.data.role !== 'admin') {
+                    setError("Unauthorized: Not an Admin account.");
+                    setLoading(false);
+                    return;
+                }
+                if (!isAdminLogin && res.data.role === 'admin') {
+                    setError("Admins must login through the Admin portal.");
+                    setLoading(false);
+                    return;
+                }
                 // Login success
                 localStorage.setItem("token", res.data.token);
                 localStorage.setItem("user", JSON.stringify(res.data));
@@ -45,8 +56,12 @@ const Login = ({ onLogin }) => {
             <div className="login-right">
                 <div className="login-box">
                     <div className="login-header">
-                        <h2>{isRegister ? "Create Account" : "Welcome Back"}</h2>
-                        <p>{isRegister ? "Join the digital governance platform." : "Sign in to continue."}</p>
+                        <div style={{ display: 'flex', justifyContent: 'center', gap: '1rem', marginBottom: '1rem' }}>
+                            <button className={`login-tab ${!isAdminLogin && !isRegister ? 'active' : ''}`} onClick={() => { setIsAdminLogin(false); setIsRegister(false); }} style={{ background: 'transparent', border: 'none', borderBottom: !isAdminLogin && !isRegister ? '2px solid var(--primary)' : 'none', fontWeight: 'bold', cursor: 'pointer', paddingBottom: '0.5rem', color: !isAdminLogin && !isRegister ? 'var(--primary)' : 'var(--text-secondary)' }}>Citizen Login</button>
+                            <button className={`login-tab ${isAdminLogin ? 'active' : ''}`} onClick={() => { setIsAdminLogin(true); setIsRegister(false); }} style={{ background: 'transparent', border: 'none', borderBottom: isAdminLogin ? '2px solid var(--primary)' : 'none', fontWeight: 'bold', cursor: 'pointer', paddingBottom: '0.5rem', color: isAdminLogin ? 'var(--primary)' : 'var(--text-secondary)' }}>Admin Login</button>
+                        </div>
+                        <h2>{isRegister ? "Create Account" : (isAdminLogin ? "Admin Sign In" : "Welcome Back")}</h2>
+                        <p>{isRegister ? "Join the digital governance platform." : (isAdminLogin ? "Sign in to the Admin Dashboard." : "Sign in to continue.")}</p>
                     </div>
                     <form className="login-form" onSubmit={handleSubmit}>
                         <div className="form-group">
@@ -90,9 +105,9 @@ const Login = ({ onLogin }) => {
                         </button>
                     </form>
                     <div className="login-footer">
-                        {isRegister ? "Already have an account?" : "Don't have an account?"}
-                        <span onClick={() => setIsRegister(!isRegister)} style={{ cursor: 'pointer', color: 'var(--primary)', fontWeight: 'bold', marginLeft: '0.5rem' }}>
-                            {isRegister ? "Login" : "Register"}
+                        {isRegister ? "Already have an account?" : (isAdminLogin ? "Looking for Citizen Portal?" : "Don't have an account?")}
+                        <span onClick={() => { if(isAdminLogin) { setIsAdminLogin(false); } else { setIsRegister(!isRegister); } }} style={{ cursor: 'pointer', color: 'var(--primary)', fontWeight: 'bold', marginLeft: '0.5rem' }}>
+                            {isRegister ? "Login" : (isAdminLogin ? "Citizen Login" : "Register")}
                         </span>
                     </div>
                 </div>

@@ -36,6 +36,42 @@
       "artifacts": [
         "Governance"
       ]
+    },
+    "C:\\Rajnish Kumar\\Anti Gravity\\sem8 project 2\\blockchain\\contracts\\Governance.sol": {
+      "lastModificationDate": 1777396579383,
+      "contentHash": "625cc9af286da1dc57a13af606eebd36",
+      "sourceName": "contracts/Governance.sol",
+      "solcConfig": {
+        "version": "0.8.24",
+        "settings": {
+          "evmVersion": "paris",
+          "optimizer": {
+            "enabled": false,
+            "runs": 200
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [],
+      "versionPragmas": [
+        "^0.8.24"
+      ],
+      "artifacts": [
+        "Governance"
+      ]
     }
   }
 }

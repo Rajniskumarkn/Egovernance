@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import Dashboard from './components/Dashboard';
+import AdminDashboard from './components/AdminDashboard';
 import Login from './components/Login';
 
 function App() {
@@ -27,6 +28,8 @@ function App() {
     <div className="App">
       {!token ? (
         <Login onLogin={handleLogin} />
+      ) : user?.role === 'admin' ? (
+        <AdminDashboard user={user} onLogout={handleLogout} />
       ) : (
         <Dashboard user={user} onLogout={handleLogout} />
       )}

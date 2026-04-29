@@ -1,10 +1,10 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from .models.predictive import predict_resource_shortage
-from .models.fraud import detect_anomalies
-from .models.ocr import verify_document
-from .blockchain_client import BlockchainClient
+from models.predictive import predict_resource_shortage
+from models.fraud import detect_anomalies
+from models.ocr import verify_document
+from blockchain_client import BlockchainClient
 import shutil
 import os
 import random
@@ -35,7 +35,7 @@ class FraudInput(BaseModel):
     receiver: str
     location: str
 
-from .models.chat import get_chat_response
+from models.chat import get_chat_response
 
 class ChatInput(BaseModel):
     message: str

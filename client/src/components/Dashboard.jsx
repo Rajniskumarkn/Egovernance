@@ -12,6 +12,7 @@ const Dashboard = ({ user, onLogout }) => {
     const [balance, setBalance] = useState("0");
     const [networkName, setNetworkName] = useState("Unknown");
     const [activeTab, setActiveTab] = useState('overview'); // 'overview', 'assets', 'requests'
+    const [isRefreshing, setIsRefreshing] = useState(false);
 
     // Recovery State
     const [connectionError, setConnectionError] = useState(null); // 'MISSING_CONTRACT' | 'NETWORK_ERROR'
@@ -40,8 +41,7 @@ const Dashboard = ({ user, onLogout }) => {
     // Forms
     const [location, setLocation] = useState("");
     const [area, setArea] = useState("");
-    const [file, setFile] = useState(null);
-    const [verificationResult, setVerificationResult] = useState(null);
+    const [landDocument, setLandDocument] = useState(null);
     const [fundPurpose, setFundPurpose] = useState("");
     const [fundAmount, setFundAmount] = useState("");
 
@@ -164,15 +164,14 @@ const Dashboard = ({ user, onLogout }) => {
             for (let i = 1; i <= Number(lCount); i++) {
                 const land = await contractInstance.lands(i);
                 console.log(`Land #${i}:`, land);
-                // struct Land { id, location, area, owner, isRegistered }
-                if (land.isRegistered) {
-                    blockchainLands.push({
-                        landId: land.id,
-                        location: land.location,
-                        area: land.area,
-                        owner: land.owner
-                    });
-                }
+                // struct Land { id, location, area, owner, status }
+                blockchainLands.push({
+                    landId: land.id,
+                    location: land.location,
+                    area: land.area,
+                    owner: land.owner,
+                    status: Number(land.status) // 0: Pending, 1: Approved, 2: Rejected
+                });
             }
             console.log("All Fetched Lands:", blockchainLands);
             setAllLands(blockchainLands);
@@ -228,11 +227,31 @@ const Dashboard = ({ user, onLogout }) => {
         }
     };
 
+    const handleRefresh = async () => {
+        setIsRefreshing(true);
+        try {
+            const { signer } = await connectWallet();
+            const contractInstance = await getContract(signer);
+            setContract(contractInstance);
+            await fetchData(contractInstance, account);
+        } catch (err) {
+            console.error("Refresh failed:", err);
+        }
+        setTimeout(() => setIsRefreshing(false), 500);
+    };
+
     const handleRegisterLand = async () => {
         if (!contract) return;
 
         // [FIX] Check if contract exists on-chain before sending tx
-        const code = await contract.runner.provider.getCode(contract.target);
+        let code = '0x';
+        try {
+            const provider = new ethers.BrowserProvider(window.ethereum);
+            code = await provider.getCode(contract.target);
+        } catch (e) {
+            console.error("Failed to check contract code:", e);
+        }
+
         if (code === '0x') {
             alert("Error: Contract not deployed. Please waiting for auto-repair or restart.");
             return;
@@ -245,9 +264,46 @@ const Dashboard = ({ user, onLogout }) => {
             await tx.wait();
             console.log("Transaction Mined");
 
+            if (landDocument) {
+                const reader = new FileReader();
+                reader.onloadend = async () => {
+                    try {
+                        const base64String = reader.result;
+                        const lCount = await contract.landCount();
+                        localStorage.setItem('land_doc_' + Number(lCount), base64String);
+                    } catch (e) {
+                        alert("Ownership Document too large to save in local storage! Try a smaller image.");
+                    }
+                };
+                reader.readAsDataURL(landDocument);
+            }
+
+            // [NEW] Send registry request to the backend
+            try {
+                await axios.post('http://localhost:5000/api/land/add', {
+                    location: location,
+                    area: Number(area),
+                    owner: account,
+                    status: 0,
+                    transactionHash: tx.hash
+                });
+                
+                await axios.post('http://localhost:5000/api/transaction/add', {
+                    type: 'LAND_REGISTRATION',
+                    details: `Registered land at ${location}`,
+                    user: account,
+                    status: 'Success',
+                    transactionHash: tx.hash
+                });
+                console.log("Registry request sent to backend successfully.");
+            } catch (err) {
+                console.error("Failed to send registry request to backend:", err);
+                alert("Blockchain registration succeeded, but failed to sync with backend database.");
+            }
+
             alert(`Land Registered Successfully!\nTx Hash: ${tx.hash}`);
             fetchData(contract, account);
-            setLocation(""); setArea("");
+            setLocation(""); setArea(""); setLandDocument(null);
         } catch (err) {
             console.error("Registration Error:", err);
             alert("Error: " + err.message);
@@ -255,6 +311,20 @@ const Dashboard = ({ user, onLogout }) => {
             if (err.message.includes("Nonce too high") || err.message.includes("nonce")) {
                 alert("⚠️ METAMASK ERROR DETECTED ⚠️\n\nYour MetaMask wallet is out of sync with the new blockchain.\n\nPLEASE FIX:\n1. Open MetaMask\n2. Go to Settings > Advanced\n3. Click 'Clear Activity Tab Data'\n4. Try again.");
             }
+
+            // [NEW] Log failed transaction
+            try {
+                await axios.post('http://localhost:5000/api/transaction/add', {
+                    type: 'LAND_REGISTRATION',
+                    details: `Failed registration at ${location}`,
+                    user: account,
+                    status: 'Failed',
+                    error: err.reason || err.message
+                });
+            } catch (e) {
+                console.error("Could not log failed transaction", e);
+            }
+
             fetchData(contract, account);
         }
         setLoading(false);
@@ -268,8 +338,8 @@ const Dashboard = ({ user, onLogout }) => {
         setLoading(true);
         try {
             console.log("Registering on blockchain with:", user.fullName);
-            // Assuming Role 0 (Citizen) for now. You might want to map this from DB role if needed.
-            const tx = await contract.registerUser(user.fullName || "Unknown", 0, "email-hash-placeholder");
+            const userRole = user?.role === 'admin' ? 1 : 0;
+            const tx = await contract.registerUser(user.fullName || "Unknown", userRole, "email-hash-placeholder");
             await tx.wait();
 
             alert("Successfully Registered on Blockchain!");
@@ -278,25 +348,13 @@ const Dashboard = ({ user, onLogout }) => {
             // Refetch role and data
             const userStruct = await contract.users(account);
             setRole(Number(userStruct.role));
+            if (Number(userStruct.role) === 1) setActiveTab('admin');
             fetchData(contract, account);
 
         } catch (err) {
             console.error("Blockchain Registration Failed:", err);
             alert("Registration Failed: " + (err.reason || err.message));
         }
-        setLoading(false);
-    };
-
-    const handleVerifyDocument = async () => {
-        if (!file) return;
-        setLoading(true);
-        const formData = new FormData();
-        formData.append("file", file);
-        try {
-            const res = await axios.post(`${AI_API}/verify-document`, formData, { headers: { "Content-Type": "multipart/form-data" } });
-            setVerificationResult(res.data);
-            if (res.data.blockchain_tx) alert("Verified & Recorded!");
-        } catch (err) { alert("AI Error: " + err.message); }
         setLoading(false);
     };
 
@@ -313,18 +371,7 @@ const Dashboard = ({ user, onLogout }) => {
         setLoading(false);
     };
 
-    const handleApproveFund = async (id) => {
-        if (!contract) return;
-        setLoading(true);
-        try {
-            const tx = await contract.approveFundRequest(id);
-            await tx.wait();
-            alert("Fund Approved!");
-            fetchData(contract, account);
-        } catch (err) { alert("Error: " + err.message); }
-        setLoading(false);
-        setLoading(false);
-    };
+
 
     const handleSendMessage = async () => {
         if (!chatInput.trim()) return;
@@ -409,7 +456,7 @@ const Dashboard = ({ user, onLogout }) => {
                     <li className={`nav-item ${activeTab === 'overview' ? 'active' : ''}`} onClick={() => setActiveTab('overview')} title="Overview">📊</li>
                     <li className={`nav-item ${activeTab === 'assets' ? 'active' : ''}`} onClick={() => setActiveTab('assets')} title="Land Registry">🌍</li>
                     <li className={`nav-item ${activeTab === 'support' ? 'active' : ''}`} onClick={() => setActiveTab('support')} title="Support">🤝</li>
-                    {role === 1 && <li className={`nav-item ${activeTab === 'admin' ? 'active' : ''}`} onClick={() => setActiveTab('admin')} title="Admin">🛡️</li>}
+
                 </ul>
             </aside>
 
@@ -440,6 +487,9 @@ const Dashboard = ({ user, onLogout }) => {
                         </div>
 
                         <button className="secondary" onClick={() => alert("Feature Coming Soon")} style={{ whiteSpace: 'nowrap' }}>+ New Request</button>
+                        <button onClick={handleRefresh} disabled={loading || isRefreshing} style={{ background: 'var(--primary)', color: 'white', border: 'none', padding: '0.5rem 1rem', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', marginLeft: '0.5rem', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            <span style={{ display: 'inline-block', animation: isRefreshing ? 'spin 1s linear infinite' : 'none' }}>🔄</span> Refresh Data
+                        </button>
 
                         <button onClick={toggleTheme} style={{ borderRadius: '50%', width: '40px', height: '40px', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--surface)', border: '1px solid var(--border)', fontSize: '1.2rem' }}>
                             {theme === 'light' ? '🌙' : '☀️'}
@@ -469,7 +519,7 @@ const Dashboard = ({ user, onLogout }) => {
                             <div className={`crm-tab ${activeTab === 'assets' ? 'active' : ''}`} onClick={() => setActiveTab('assets')}>Assets</div>
                             <div className={`crm-tab ${activeTab === 'history' ? 'active' : ''}`} onClick={() => setActiveTab('history')}>History</div>
                             <div className={`crm-tab ${activeTab === 'support' ? 'active' : ''}`} onClick={() => setActiveTab('support')}>Requests</div>
-                            {role === 1 && <div className={`crm-tab ${activeTab === 'admin' ? 'active' : ''}`} onClick={() => setActiveTab('admin')}>Admin</div>}
+
                         </div>
 
                         {/* Content Switching */}
@@ -498,26 +548,24 @@ const Dashboard = ({ user, onLogout }) => {
                                 <div className="card">
                                     <h2>Register New Land</h2>
                                     <div style={{ display: 'grid', gap: '1rem', gridTemplateColumns: '1fr 1fr' }}>
-                                        <input type="text" placeholder="Location Name" value={location} onChange={e => setLocation(e.target.value)} />
-                                        <input type="number" placeholder="Area (sq ft)" value={area} onChange={e => setArea(e.target.value)} />
+                                        <div>
+                                            <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '500', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>Location Name</label>
+                                            <input type="text" placeholder="Enter location name" value={location} onChange={e => setLocation(e.target.value)} style={{ width: '100%', marginBottom: 0 }} />
+                                        </div>
+                                        <div>
+                                            <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '500', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>Area (sq ft)</label>
+                                            <input type="number" placeholder="Enter area in sq ft" value={area} onChange={e => setArea(e.target.value)} style={{ width: '100%', marginBottom: 0 }} />
+                                        </div>
+                                        <div>
+                                            <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '500', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>Ownership Document (Optional)</label>
+                                            <input type="file" onChange={e => setLandDocument(e.target.files[0])} style={{ width: '100%', marginBottom: 0, padding: '0.65rem 1rem' }} />
+                                        </div>
                                     </div>
                                     <button style={{ marginTop: '1rem', opacity: isRegisteredOnChain ? 1 : 0.5, cursor: isRegisteredOnChain ? 'pointer' : 'not-allowed' }} onClick={handleRegisterLand} disabled={loading || !isRegisteredOnChain}>
                                         {loading ? "Processing..." : isRegisteredOnChain ? "Register Land" : "⚠️ Register on Blockchain First"}
                                     </button>
                                     {!isRegisteredOnChain && <p style={{ color: 'var(--danger)', fontSize: '0.8rem', marginTop: '0.5rem' }}>You must register your identity on the blockchain (top right button) before registering land.</p>}
                                 </div>
-
-                                <div className="card">
-                                    <h2>AI Document Verification</h2>
-                                    <input type="file" onChange={e => setFile(e.target.files[0])} />
-                                    <button style={{ marginTop: '1rem' }} onClick={handleVerifyDocument} disabled={loading}>{loading ? "Verifying..." : "Verify & Upload"}</button>
-                                    {verificationResult && (
-                                        <div className={`verification-result ${verificationResult.verified ? 'verified' : 'rejected'}`} style={{ marginTop: '1rem' }}>
-                                            Status: {verificationResult.verified ? "Verified" : "Rejected"}
-                                        </div>
-                                    )}
-                                </div>
-
                                 <h3>
                                     {showAllLands ? "All Registered Lands" : "My Assets"}
                                     <button
@@ -532,8 +580,11 @@ const Dashboard = ({ user, onLogout }) => {
                                         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                                             <strong>{l.location}</strong>
                                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                                <span className="status-badge status-approved">{l.area.toString()} sq ft</span>
-                                                <span style={{ fontSize: '1.2rem' }}>✅</span>
+                                                <span className={`status-badge ${l.status === 1 ? 'status-approved' : l.status === 2 ? 'status-rejected' : 'status-pending'}`}>
+                                                    {l.status === 0 ? "Pending" : l.status === 1 ? "Approved" : "Rejected"}
+                                                </span>
+                                                <span className="status-badge" style={{ background: '#e2e8f0', color: '#1e293b' }}>{l.area.toString()} sq ft</span>
+                                                <span style={{ fontSize: '1.2rem' }}>{l.status === 1 ? '✅' : l.status === 2 ? '❌' : '⏳'}</span>
                                             </div>
                                         </div>
                                         <small style={{ color: 'var(--text-secondary)' }}>ID: #{l.landId?.toString()}</small>
@@ -591,26 +642,7 @@ const Dashboard = ({ user, onLogout }) => {
                             </div>
                         )}
 
-                        {activeTab === 'admin' && (
-                            <div>
-                                <h3>User Requests</h3>
-                                {fundRequests.map((req, i) => (
-                                    <div key={i} className="card" style={{ padding: '1rem', marginBottom: '1rem', borderColor: req.approved ? 'var(--success)' : 'var(--danger)' }}>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                            <div>
-                                                <strong>{req.purpose}</strong>
-                                                <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>By: {req.requester}</div>
-                                            </div>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                                                <span style={{ fontWeight: 'bold' }}>${req.amount.toString()}</span>
-                                                {!req.approved && <button onClick={() => handleApproveFund(req.id)}>Approve</button>}
-                                                {req.approved && <span className="status-badge status-approved">Approved</span>}
-                                            </div>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
+
 
                     </div>
 

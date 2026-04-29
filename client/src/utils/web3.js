@@ -55,5 +55,6 @@ export const switchNetwork = async () => {
 };
 
 export const getContract = async (signerOrProvider) => {
-    return new ethers.Contract(ContractAddress.address, GovernanceABI, signerOrProvider);
+    const abi = GovernanceABI.abi || GovernanceABI;
+    return new ethers.Contract(ContractAddress.address, abi, signerOrProvider);
 };

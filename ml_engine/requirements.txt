@@ -6,3 +6,5 @@ web3
 python-multipart
 requests
 numpy
+google-generativeai
+python-dotenv
